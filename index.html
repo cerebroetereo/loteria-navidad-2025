@@ -347,34 +347,41 @@
             return result;
         }
         
-        // Procesar CSV
-        function procesarCSV(csvText) {
-            const lineas = csvText.split('\n');
-            datosParticipaciones = {};
-            
-            // Saltar encabezado (primera línea)
-            for (let i = 1; i < lineas.length; i++) {
-                const linea = lineas[i].trim();
-                if (!linea) continue;
-                
-                // Parsear CSV de forma más robusta
-                const columnas = parseCSVLine(linea);
-                if (!columnas || columnas.length < 2) continue;
-                
-                // El nombre está en la segunda columna (índice 1)
-                const nombre = columnas[1].trim();
-                if (!nombre || nombre === '') continue;
-                
-                // Contar participaciones acumuladas por nombre
-                if (!datosParticipaciones[nombre]) {
-                    datosParticipaciones[nombre] = 0;
-                }
-                datosParticipaciones[nombre]++;
-            }
-            
-            // Rellenar el selector
-            rellenarSelector();
+// Procesar CSV
+function procesarCSV(csvText) {
+    const lineas = csvText.split('\n');
+    datosParticipaciones = {};
+    
+    // Saltar encabezado (primera línea)
+    for (let i = 1; i < lineas.length; i++) {
+        const linea = lineas[i].trim();
+        if (!linea) continue;
+        
+        // Parsear CSV de forma más robusta
+        const columnas = parseCSVLine(linea);
+        if (!columnas || columnas.length < 2) continue;
+        
+        // El nombre está en la segunda columna (índice 1)
+        let nombre = columnas[1].trim();
+        
+        // Remover comillas si las hay
+        if (nombre.startsWith('"') && nombre.endsWith('"')) {
+            nombre = nombre.slice(1, -1).replace(/""/g, '"');
         }
+        
+        if (!nombre || nombre === '') continue;
+        
+        // Contar participaciones acumuladas por nombre
+        if (!datosParticipaciones[nombre]) {
+            datosParticipaciones[nombre] = 0;
+        }
+        datosParticipaciones[nombre]++;
+    }
+    
+    // Rellenar el selector
+    rellenarSelector();
+}
+
         
         // Rellenar el selector de nombres
         function rellenarSelector() {
@@ -456,3 +463,4 @@
     </script>
 </body>
 </html>
+
