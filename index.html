@@ -327,6 +327,13 @@
         let datosParticipaciones = {};
         let modoDebug = true; // Cambia a false para desactivar debug
         
+        // Función para normalizar nombres (elimina espacios múltiples y normaliza mayúsculas)
+        function normalizarNombre(nombre) {
+            return nombre.trim()
+                .replace(/\s+/g, ' ')  // Reemplazar múltiples espacios por uno solo
+                .toLowerCase();         // Convertir a minúsculas
+        }
+        
         // Cargar datos desde Google Sheets
         async function cargarDatosGoogleSheets() {
             try {
@@ -352,7 +359,7 @@
             }
         }
         
-        // Procesar CSV con soporte para múltiples formas de pago
+        // Procesar CSV con normalización de nombres mejorada
         function procesarCSV(csvText) {
             const lineas = csvText.split('\n');
             datosParticipaciones = {};
@@ -392,10 +399,10 @@
                 
                 // Extraer forma de pago y nombre
                 const formaPago = columnas[COLUMNA_FORMA_PAGO];
-                const nombre = columnas[COLUMNA_NOMBRE];
+                const nombreOriginal = columnas[COLUMNA_NOMBRE].trim();
                 
                 // Validar nombre
-                if (!nombre || nombre === '' || nombre === 'undefined' || nombre === 'null') {
+                if (!nombreOriginal || nombreOriginal === '' || nombreOriginal === 'undefined' || nombreOriginal === 'null') {
                     lineasIgnoradas++;
                     if (modoDebug) {
                         console.warn(`Línea ${i} ignorada: nombre vacío. Forma pago: "${formaPago}"`);
@@ -403,27 +410,31 @@
                     continue;
                 }
                 
+                // Normalizar nombre para agrupación consistente
+                const nombreNormalizado = normalizarNombre(nombreOriginal);
+                
                 // Inicializar estructura de datos si no existe
-                if (!datosParticipaciones[nombre]) {
-                    datosParticipaciones[nombre] = {
+                if (!datosParticipaciones[nombreNormalizado]) {
+                    datosParticipaciones[nombreNormalizado] = {
                         total: 0,
                         metalico: 0,
                         bizum: 0,
-                        otros: 0
+                        otros: 0,
+                        nombreOriginal: nombreOriginal  // Guardar nombre original para mostrar
                     };
                 }
                 
                 // Incrementar contadores
-                datosParticipaciones[nombre].total++;
+                datosParticipaciones[nombreNormalizado].total++;
                 
                 // Clasificar por forma de pago (normalizando texto)
                 const formaPagoNormalizada = formaPago.toLowerCase().trim();
                 if (formaPagoNormalizada.includes('metal') || formaPagoNormalizada.includes('efectivo')) {
-                    datosParticipaciones[nombre].metalico++;
+                    datosParticipaciones[nombreNormalizado].metalico++;
                 } else if (formaPagoNormalizada.includes('bizum')) {
-                    datosParticipaciones[nombre].bizum++;
+                    datosParticipaciones[nombreNormalizado].bizum++;
                 } else {
-                    datosParticipaciones[nombre].otros++;
+                    datosParticipaciones[nombreNormalizado].otros++;
                 }
                 
                 lineasProcesadas++;
@@ -435,9 +446,9 @@
                 mostrarDebug(`Líneas procesadas: ${lineasProcesadas}`);
                 mostrarDebug(`Líneas ignoradas: ${lineasIgnoradas}`);
                 mostrarDebug('\n=== PARTICIPACIONES POR PERSONA ===');
-                Object.keys(datosParticipaciones).forEach(nombre => {
-                    const datos = datosParticipaciones[nombre];
-                    mostrarDebug(`${nombre}:`);
+                Object.keys(datosParticipaciones).forEach(nombreNormalizado => {
+                    const datos = datosParticipaciones[nombreNormalizado];
+                    mostrarDebug(`${datos.nombreOriginal} (normalizado: "${nombreNormalizado}"):`);
                     mostrarDebug(`  Total: ${datos.total}`);
                     mostrarDebug(`  Metálico: ${datos.metalico}`);
                     mostrarDebug(`  Bizum: ${datos.bizum}`);
@@ -490,32 +501,34 @@
             return resultado;
         }
         
-        // Rellenar selector
+        // Rellenar selector con nombres originales
         function rellenarSelector() {
             const selector = document.getElementById('nombreSelector');
-            const nombres = Object.keys(datosParticipaciones).sort();
+            const nombresNormalizados = Object.keys(datosParticipaciones).sort((a, b) => {
+                return datosParticipaciones[a].nombreOriginal.localeCompare(datosParticipaciones[b].nombreOriginal);
+            });
             
-            if (nombres.length === 0) {
+            if (nombresNormalizados.length === 0) {
                 mostrarError('No se encontraron nombres en los datos.');
                 return;
             }
             
             selector.innerHTML = '<option value="">-- Selecciona tu nombre --</option>';
             
-            nombres.forEach(nombre => {
-                const datos = datosParticipaciones[nombre];
+            nombresNormalizados.forEach(nombreNormalizado => {
+                const datos = datosParticipaciones[nombreNormalizado];
                 const option = document.createElement('option');
-                option.value = nombre;
-                option.textContent = `${nombre} (${datos.total} participaciones)`;
+                option.value = nombreNormalizado;
+                option.textContent = `${datos.nombreOriginal} (${datos.total} participaciones)`;
                 selector.appendChild(option);
             });
             
-            console.log(`Selector rellenado con ${nombres.length} nombres`);
+            console.log(`Selector rellenado con ${nombresNormalizados.length} nombres`);
         }
         
         // Mostrar premios
-        function mostrarPremios(nombre) {
-            const datos = datosParticipaciones[nombre];
+        function mostrarPremios(nombreNormalizado) {
+            const datos = datosParticipaciones[nombreNormalizado];
             if (!datos) return;
             
             const participaciones = datos.total;
@@ -572,9 +585,9 @@
         
         // Event listeners
         document.getElementById('nombreSelector').addEventListener('change', function() {
-            const nombre = this.value;
-            if (nombre) {
-                mostrarPremios(nombre);
+            const nombreNormalizado = this.value;
+            if (nombreNormalizado) {
+                mostrarPremios(nombreNormalizado);
             } else {
                 document.getElementById('infoCard').classList.remove('active');
                 document.getElementById('premiosTable').classList.remove('active');
