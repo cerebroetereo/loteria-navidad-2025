@@ -362,7 +362,7 @@ function procesarCSV(csvText) {
         if (!columnas || columnas.length < 2) continue;
         
         // El nombre está en la segunda columna (índice 1)
-        let nombre = columnas[1].trim();
+        let nombre = columnas[1].trim().replace(/\s+/g, ' '); // CORRECCIÓN AQUÍ
         
         // Remover comillas si las hay
         if (nombre.startsWith('"') && nombre.endsWith('"')) {
@@ -381,6 +381,7 @@ function procesarCSV(csvText) {
     // Rellenar el selector
     rellenarSelector();
 }
+
 
         
         // Rellenar el selector de nombres
@@ -463,4 +464,5 @@ function procesarCSV(csvText) {
     </script>
 </body>
 </html>
+
 
