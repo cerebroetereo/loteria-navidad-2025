@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lotería de Navidad 2025</title>
+    <title>Consulta Participaciones - Lotería Navidad 2025</title>
     <style>
         * {
             margin: 0;
@@ -115,6 +115,12 @@
             font-weight: bold;
         }
         
+        .payment-detail {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+        
         .premios-table {
             display: none;
             margin-top: 20px;
@@ -206,6 +212,7 @@
             display: none;
             max-height: 300px;
             overflow-y: auto;
+            white-space: pre-wrap;
         }
         
         .debug-info.active {
@@ -261,6 +268,12 @@
                 <span class="info-value" id="numParticipaciones">-</span>
             </div>
             <div class="info-row">
+                <div style="flex: 1;">
+                    <div class="info-label">Desglose por método de pago:</div>
+                    <div class="payment-detail" id="desglosePago">-</div>
+                </div>
+            </div>
+            <div class="info-row">
                 <span class="info-label">Total jugado:</span>
                 <span class="info-value" id="totalJugado">-</span>
             </div>
@@ -293,8 +306,12 @@
     <script>
         // CONFIGURACIÓN: Reemplaza con tu ID de Google Sheets
         const SHEET_ID = '1_qKcfIR2dt6O_yGeEtN9BACDJryVj9U-iNCiCj21Bs0';
-        const SHEET_NAME = 'Participantes'; // Ajusta el nombre de tu hoja
+        const SHEET_NAME = 'Participantes';
         const API_KEY = 'TU_API_KEY_AQUI'; // Opcional si la hoja es pública
+        
+        // CONFIGURACIÓN DE COLUMNAS - AJUSTA SEGÚN TU ESTRUCTURA
+        const COLUMNA_FORMA_PAGO = 0;  // Índice de la columna "Forma de Pago"
+        const COLUMNA_NOMBRE = 1;      // Índice de la columna "Nombre"
         
         // Definición de premios (por décimo completo de 20€)
         const PREMIOS = [
@@ -308,12 +325,11 @@
         ];
         
         let datosParticipaciones = {};
-        let modoDebug = false; // Cambia a true para ver información de depuración
+        let modoDebug = true; // Cambia a false para desactivar debug
         
-        // Cargar datos desde Google Sheets (método público)
+        // Cargar datos desde Google Sheets
         async function cargarDatosGoogleSheets() {
             try {
-                // URL para leer Google Sheets en formato CSV (requiere que la hoja sea pública)
                 const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
                 
                 const response = await fetch(url);
@@ -321,9 +337,8 @@
                 
                 const csvText = await response.text();
                 
-                // Debug: Mostrar las primeras líneas del CSV
                 if (modoDebug) {
-                    mostrarDebug('CSV recibido (primeros 500 caracteres):\n' + csvText.substring(0, 500));
+                    mostrarDebug('=== CSV RECIBIDO (primeros 800 caracteres) ===\n' + csvText.substring(0, 800));
                 }
                 
                 procesarCSV(csvText);
@@ -337,98 +352,145 @@
             }
         }
         
-        // Procesar CSV - VERSIÓN MEJORADA
+        // Procesar CSV con soporte para múltiples formas de pago
         function procesarCSV(csvText) {
             const lineas = csvText.split('\n');
             datosParticipaciones = {};
             let lineasProcesadas = 0;
             let lineasIgnoradas = 0;
             
+            if (modoDebug) {
+                mostrarDebug('\n=== PROCESANDO CSV ===');
+            }
+            
             // Saltar encabezado (primera línea)
             for (let i = 1; i < lineas.length; i++) {
                 const linea = lineas[i].trim();
                 
-                // Ignorar líneas vacías
-                if (!linea) {
-                    continue;
-                }
+                if (!linea) continue;
                 
                 // Parsear CSV correctamente
-                // Método 1: Split por comas (simple, para CSV sin comillas complejas)
-                let columnas = linea.split(',').map(col => col.trim());
+                let columnas = parsearLineaCSV(linea);
                 
-                // Método 2: Si hay comillas, procesarlas
-                if (linea.includes('"')) {
-                    // Dividir respetando comillas
-                    columnas = linea.split('","').map(col => 
-                        col.replace(/^"|"$/g, '').trim()
-                    );
-                }
-                
-                // Debug: Mostrar estructura de la primera línea de datos
+                // Debug: Primera línea de datos
                 if (modoDebug && i === 1) {
-                    mostrarDebug('Primera línea de datos:\n' + JSON.stringify(columnas, null, 2));
+                    mostrarDebug('\n--- Primera línea de datos ---');
                     mostrarDebug('Número de columnas: ' + columnas.length);
+                    columnas.forEach((col, idx) => {
+                        mostrarDebug(`Columna [${idx}]: "${col}"`);
+                    });
                 }
                 
-                // Validar que hay al menos 2 columnas
+                // Validar columnas mínimas
                 if (columnas.length < 2) {
                     lineasIgnoradas++;
                     if (modoDebug) {
-                        console.warn(`Línea ${i} ignorada: menos de 2 columnas`, columnas);
+                        console.warn(`Línea ${i} ignorada: menos de 2 columnas`);
                     }
                     continue;
                 }
                 
-                // AJUSTA ESTE ÍNDICE según la estructura de tu CSV
-                // Si el nombre está en la primera columna, usa columnas[0]
-                // Si está en la segunda columna, usa columnas[1]
-                const nombre = columnas[1]; // <-- AJUSTAR AQUÍ según tu estructura
+                // Extraer forma de pago y nombre
+                const formaPago = columnas[COLUMNA_FORMA_PAGO];
+                const nombre = columnas[COLUMNA_NOMBRE];
                 
-                // Validar que el nombre existe y no está vacío
+                // Validar nombre
                 if (!nombre || nombre === '' || nombre === 'undefined' || nombre === 'null') {
                     lineasIgnoradas++;
                     if (modoDebug) {
-                        console.warn(`Línea ${i} ignorada: nombre vacío o inválido. Columnas:`, columnas);
+                        console.warn(`Línea ${i} ignorada: nombre vacío. Forma pago: "${formaPago}"`);
                     }
                     continue;
                 }
                 
-                // Inicializar contador si no existe
+                // Inicializar estructura de datos si no existe
                 if (!datosParticipaciones[nombre]) {
-                    datosParticipaciones[nombre] = 0;
+                    datosParticipaciones[nombre] = {
+                        total: 0,
+                        metalico: 0,
+                        bizum: 0,
+                        otros: 0
+                    };
                 }
-                datosParticipaciones[nombre]++;
+                
+                // Incrementar contadores
+                datosParticipaciones[nombre].total++;
+                
+                // Clasificar por forma de pago (normalizando texto)
+                const formaPagoNormalizada = formaPago.toLowerCase().trim();
+                if (formaPagoNormalizada.includes('metal') || formaPagoNormalizada.includes('efectivo')) {
+                    datosParticipaciones[nombre].metalico++;
+                } else if (formaPagoNormalizada.includes('bizum')) {
+                    datosParticipaciones[nombre].bizum++;
+                } else {
+                    datosParticipaciones[nombre].otros++;
+                }
+                
                 lineasProcesadas++;
             }
             
-            // Debug: Mostrar resultados del procesamiento
+            // Debug: Mostrar resumen
             if (modoDebug) {
-                mostrarDebug('\n--- Resumen del procesamiento ---\n' +
-                    'Líneas procesadas correctamente: ' + lineasProcesadas + '\n' +
-                    'Líneas ignoradas: ' + lineasIgnoradas + '\n\n' +
-                    'Participaciones por persona:\n' +
-                    JSON.stringify(datosParticipaciones, null, 2));
+                mostrarDebug('\n=== RESUMEN DEL PROCESAMIENTO ===');
+                mostrarDebug(`Líneas procesadas: ${lineasProcesadas}`);
+                mostrarDebug(`Líneas ignoradas: ${lineasIgnoradas}`);
+                mostrarDebug('\n=== PARTICIPACIONES POR PERSONA ===');
+                Object.keys(datosParticipaciones).forEach(nombre => {
+                    const datos = datosParticipaciones[nombre];
+                    mostrarDebug(`${nombre}:`);
+                    mostrarDebug(`  Total: ${datos.total}`);
+                    mostrarDebug(`  Metálico: ${datos.metalico}`);
+                    mostrarDebug(`  Bizum: ${datos.bizum}`);
+                    if (datos.otros > 0) mostrarDebug(`  Otros: ${datos.otros}`);
+                });
             }
             
             console.log('Datos procesados:', datosParticipaciones);
-            console.log('Total líneas procesadas:', lineasProcesadas);
-            console.log('Total líneas ignoradas:', lineasIgnoradas);
             
-            // Verificar si se encontraron datos
+            // Verificar datos
             if (Object.keys(datosParticipaciones).length === 0) {
-                mostrarError('No se encontraron datos válidos en la hoja. Verifica la estructura del CSV.');
-                if (!modoDebug) {
-                    mostrarDebug('Activa el modo debug (modoDebug = true) para más información.');
-                    document.getElementById('debugInfo').classList.add('active');
-                }
+                mostrarError('No se encontraron datos válidos. Verifica la estructura del CSV.');
                 return;
             }
             
             rellenarSelector();
         }
         
-        // Rellenar el selector de nombres
+        // Función mejorada para parsear líneas CSV
+        function parsearLineaCSV(linea) {
+            const resultado = [];
+            let dentroComillas = false;
+            let campoActual = '';
+            
+            for (let i = 0; i < linea.length; i++) {
+                const char = linea[i];
+                const siguienteChar = linea[i + 1];
+                
+                if (char === '"') {
+                    if (dentroComillas && siguienteChar === '"') {
+                        // Comillas escapadas
+                        campoActual += '"';
+                        i++; // Saltar la siguiente comilla
+                    } else {
+                        // Alternar estado de comillas
+                        dentroComillas = !dentroComillas;
+                    }
+                } else if (char === ',' && !dentroComillas) {
+                    // Fin de campo
+                    resultado.push(campoActual.trim());
+                    campoActual = '';
+                } else {
+                    campoActual += char;
+                }
+            }
+            
+            // Agregar último campo
+            resultado.push(campoActual.trim());
+            
+            return resultado;
+        }
+        
+        // Rellenar selector
         function rellenarSelector() {
             const selector = document.getElementById('nombreSelector');
             const nombres = Object.keys(datosParticipaciones).sort();
@@ -438,34 +500,40 @@
                 return;
             }
             
-            // Limpiar opciones existentes (excepto la primera)
             selector.innerHTML = '<option value="">-- Selecciona tu nombre --</option>';
             
             nombres.forEach(nombre => {
+                const datos = datosParticipaciones[nombre];
                 const option = document.createElement('option');
                 option.value = nombre;
-                option.textContent = `${nombre} (${datosParticipaciones[nombre]} participaciones)`;
+                option.textContent = `${nombre} (${datos.total} participaciones)`;
                 selector.appendChild(option);
             });
             
             console.log(`Selector rellenado con ${nombres.length} nombres`);
         }
         
-        // Calcular y mostrar premios
+        // Mostrar premios
         function mostrarPremios(nombre) {
-            const participaciones = datosParticipaciones[nombre];
-            if (!participaciones) return;
+            const datos = datosParticipaciones[nombre];
+            if (!datos) return;
             
-            // Cada participación es 4€ = 20% de un décimo
+            const participaciones = datos.total;
             const porcentaje = (participaciones * 4) / 20;
             const totalJugado = participaciones * 4;
             
-            // Actualizar tarjeta de información
+            // Actualizar información
             document.getElementById('numParticipaciones').textContent = participaciones;
             document.getElementById('totalJugado').textContent = `${totalJugado} €`;
             document.getElementById('porcentajeTotal').textContent = `${(porcentaje * 100).toFixed(0)}%`;
             
-            // Mostrar tarjeta
+            // Mostrar desglose de pagos
+            let desglose = [];
+            if (datos.metalico > 0) desglose.push(`💵 Metálico: ${datos.metalico}`);
+            if (datos.bizum > 0) desglose.push(`📱 Bizum: ${datos.bizum}`);
+            if (datos.otros > 0) desglose.push(`❓ Otros: ${datos.otros}`);
+            document.getElementById('desglosePago').textContent = desglose.join(' | ');
+            
             document.getElementById('infoCard').classList.add('active');
             
             // Generar tabla de premios
@@ -484,7 +552,6 @@
                 tbody.appendChild(tr);
             });
             
-            // Mostrar tabla
             document.getElementById('premiosTable').classList.add('active');
         }
         
@@ -496,14 +563,14 @@
             document.getElementById('loading').style.display = 'none';
         }
         
-        // Mostrar información de debug
+        // Mostrar debug
         function mostrarDebug(texto) {
             const debugDiv = document.getElementById('debugInfo');
             debugDiv.textContent += texto + '\n';
             debugDiv.classList.add('active');
         }
         
-        // Event listener para el selector
+        // Event listeners
         document.getElementById('nombreSelector').addEventListener('change', function() {
             const nombre = this.value;
             if (nombre) {
@@ -514,12 +581,8 @@
             }
         });
         
-        // Cargar datos al iniciar
         window.addEventListener('load', cargarDatosGoogleSheets);
-        
-        // Recargar datos cada 5 minutos
         setInterval(cargarDatosGoogleSheets, 5 * 60 * 1000);
     </script>
 </body>
 </html>
-
