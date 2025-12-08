@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consulta Participaciones - Lotería Navidad 2025</title>
+    <title>¿Cuanto ganarias segun tus participaciones? - Lotería de Navidad 2025</title>
     <style>
         * {
             margin: 0;
@@ -195,6 +195,23 @@
             display: block;
         }
         
+        .debug-info {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 0.85em;
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .debug-info.active {
+            display: block;
+        }
+        
         .footer {
             text-align: center;
             margin-top: 30px;
@@ -236,6 +253,7 @@
         
         <div id="loading" class="loading">Cargando datos...</div>
         <div id="error" class="error"></div>
+        <div id="debugInfo" class="debug-info"></div>
         
         <div id="infoCard" class="info-card">
             <div class="info-row">
@@ -290,6 +308,7 @@
         ];
         
         let datosParticipaciones = {};
+        let modoDebug = false; // Cambia a true para ver información de depuración
         
         // Cargar datos desde Google Sheets (método público)
         async function cargarDatosGoogleSheets() {
@@ -301,6 +320,12 @@
                 if (!response.ok) throw new Error('Error al cargar los datos');
                 
                 const csvText = await response.text();
+                
+                // Debug: Mostrar las primeras líneas del CSV
+                if (modoDebug) {
+                    mostrarDebug('CSV recibido (primeros 500 caracteres):\n' + csvText.substring(0, 500));
+                }
+                
                 procesarCSV(csvText);
                 
                 document.getElementById('loading').style.display = 'none';
@@ -312,31 +337,94 @@
             }
         }
         
-        // Procesar CSV
+        // Procesar CSV - VERSIÓN MEJORADA
         function procesarCSV(csvText) {
             const lineas = csvText.split('\n');
             datosParticipaciones = {};
+            let lineasProcesadas = 0;
+            let lineasIgnoradas = 0;
             
             // Saltar encabezado (primera línea)
             for (let i = 1; i < lineas.length; i++) {
                 const linea = lineas[i].trim();
-                if (!linea) continue;
                 
-                // Parsear CSV (considerando comillas)
-                const columnas = linea.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-                if (!columnas || columnas.length < 2) continue;
+                // Ignorar líneas vacías
+                if (!linea) {
+                    continue;
+                }
                 
-                const nombre = columnas[1].replace(/^"|"$/g, '').trim();
-                if (!nombre || nombre === '') continue;
+                // Parsear CSV correctamente
+                // Método 1: Split por comas (simple, para CSV sin comillas complejas)
+                let columnas = linea.split(',').map(col => col.trim());
                 
-                // Contar participaciones
+                // Método 2: Si hay comillas, procesarlas
+                if (linea.includes('"')) {
+                    // Dividir respetando comillas
+                    columnas = linea.split('","').map(col => 
+                        col.replace(/^"|"$/g, '').trim()
+                    );
+                }
+                
+                // Debug: Mostrar estructura de la primera línea de datos
+                if (modoDebug && i === 1) {
+                    mostrarDebug('Primera línea de datos:\n' + JSON.stringify(columnas, null, 2));
+                    mostrarDebug('Número de columnas: ' + columnas.length);
+                }
+                
+                // Validar que hay al menos 2 columnas
+                if (columnas.length < 2) {
+                    lineasIgnoradas++;
+                    if (modoDebug) {
+                        console.warn(`Línea ${i} ignorada: menos de 2 columnas`, columnas);
+                    }
+                    continue;
+                }
+                
+                // AJUSTA ESTE ÍNDICE según la estructura de tu CSV
+                // Si el nombre está en la primera columna, usa columnas[0]
+                // Si está en la segunda columna, usa columnas[1]
+                const nombre = columnas[1]; // <-- AJUSTAR AQUÍ según tu estructura
+                
+                // Validar que el nombre existe y no está vacío
+                if (!nombre || nombre === '' || nombre === 'undefined' || nombre === 'null') {
+                    lineasIgnoradas++;
+                    if (modoDebug) {
+                        console.warn(`Línea ${i} ignorada: nombre vacío o inválido. Columnas:`, columnas);
+                    }
+                    continue;
+                }
+                
+                // Inicializar contador si no existe
                 if (!datosParticipaciones[nombre]) {
                     datosParticipaciones[nombre] = 0;
                 }
                 datosParticipaciones[nombre]++;
+                lineasProcesadas++;
             }
             
-            // Rellenar el selector
+            // Debug: Mostrar resultados del procesamiento
+            if (modoDebug) {
+                mostrarDebug('\n--- Resumen del procesamiento ---\n' +
+                    'Líneas procesadas correctamente: ' + lineasProcesadas + '\n' +
+                    'Líneas ignoradas: ' + lineasIgnoradas + '\n\n' +
+                    'Participaciones por persona:\n' +
+                    JSON.stringify(datosParticipaciones, null, 2));
+            }
+            
+            console.log('Datos procesados:', datosParticipaciones);
+            console.log('Total líneas procesadas:', lineasProcesadas);
+            console.log('Total líneas ignoradas:', lineasIgnoradas);
+            
+            // Verificar si se encontraron datos
+            if (Object.keys(datosParticipaciones).length === 0) {
+                mostrarError('No se encontraron datos válidos en la hoja. Verifica la estructura del CSV.');
+                if (!modoDebug) {
+                    mostrarDebug('Activa el modo debug (modoDebug = true) para más información.');
+                    document.getElementById('debugInfo').classList.add('active');
+                }
+                return;
+            }
+            
             rellenarSelector();
         }
         
@@ -345,15 +433,22 @@
             const selector = document.getElementById('nombreSelector');
             const nombres = Object.keys(datosParticipaciones).sort();
             
+            if (nombres.length === 0) {
+                mostrarError('No se encontraron nombres en los datos.');
+                return;
+            }
+            
             // Limpiar opciones existentes (excepto la primera)
             selector.innerHTML = '<option value="">-- Selecciona tu nombre --</option>';
             
             nombres.forEach(nombre => {
                 const option = document.createElement('option');
                 option.value = nombre;
-                option.textContent = nombre;
+                option.textContent = `${nombre} (${datosParticipaciones[nombre]} participaciones)`;
                 selector.appendChild(option);
             });
+            
+            console.log(`Selector rellenado con ${nombres.length} nombres`);
         }
         
         // Calcular y mostrar premios
@@ -401,6 +496,13 @@
             document.getElementById('loading').style.display = 'none';
         }
         
+        // Mostrar información de debug
+        function mostrarDebug(texto) {
+            const debugDiv = document.getElementById('debugInfo');
+            debugDiv.textContent += texto + '\n';
+            debugDiv.classList.add('active');
+        }
+        
         // Event listener para el selector
         document.getElementById('nombreSelector').addEventListener('change', function() {
             const nombre = this.value;
@@ -420,4 +522,3 @@
     </script>
 </body>
 </html>
-<!--Prueba-->
