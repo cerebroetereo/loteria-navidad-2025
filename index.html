@@ -83,16 +83,15 @@
             border-radius: 15px;
             margin-bottom: 30px;
             display: none;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: opacity 0.5s, transform 0.5s;
         }
         
         .info-card.active {
             display: block;
-            animation: fadeIn 0.5s;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+            opacity: 1;
+            transform: translateY(0);
         }
         
         .info-row {
@@ -119,11 +118,15 @@
             display: none;
             margin-top: 20px;
             overflow-x: auto;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: opacity 0.5s, transform 0.5s;
         }
         
         .premios-table.active {
             display: block;
-            animation: fadeIn 0.5s;
+            opacity: 1;
+            transform: translateY(0);
         }
         
         table {
@@ -168,6 +171,7 @@
         .premio-nombre {
             font-weight: 600;
             color: #333;
+            font-size: 1.05em;
         }
         
         .premio-cantidad {
@@ -270,7 +274,7 @@
                 <span class="info-value" id="totalJugado">-</span>
             </div>
             <div class="info-row">
-                <span class="info-label">Porcentaje total del décimo:</span>
+                <span class="info-label">Porcentaje del décimo:</span>
                 <span class="info-value" id="porcentajeTotal">-</span>
             </div>
         </div>
@@ -299,18 +303,25 @@
     </div>
 
     <script>
+        // ============================================
         // CONFIGURACIÓN
+        // ============================================
         const SHEET_ID = '1_qKcfIR2dt6O_yGeEtN9BACDJryVj9U-iNCiCj21Bs0';
         const SHEET_PARTICIPANTES = 'Participantes';
         const SHEET_PREMIOS = 'Premios';
         const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutos
         
-        // Variables globales
-        let datosParticipaciones = {};
-        let datosPremios = [];
+        // ============================================
+        // VARIABLES GLOBALES
+        // ============================================
+        let datosParticipaciones = {}; // { nombre: cantidad_participaciones }
+        let datosPremios = [];         // [ { emoji, nombre, netoDecimo }, ... ]
         let cargaDatos = { participantes: false, premios: false };
         
-        // Cargar datos desde Google Sheets (ambas hojas)
+        // ============================================
+        // CARGA DE DATOS DESDE GOOGLE SHEETS
+        // ============================================
+        
         async function cargarDatosGoogleSheets() {
             try {
                 // Resetear estado de carga
@@ -356,7 +367,6 @@
             }
         }
         
-        // Cargar hoja Participantes
         async function cargarHojaParticipantes() {
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PARTICIPANTES)}`;
             const response = await fetch(url);
@@ -369,7 +379,6 @@
             procesarCSVParticipantes(csv);
         }
         
-        // Cargar hoja Premios
         async function cargarHojaPremios() {
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PREMIOS)}`;
             const response = await fetch(url);
@@ -382,7 +391,10 @@
             procesarCSVPremios(csv);
         }
         
-        // Parser CSV robusto que maneja comillas, comas y caracteres especiales
+        // ============================================
+        // PARSER CSV ROBUSTO
+        // ============================================
+        
         function parseCSVLine(linea) {
             const columnas = [];
             let campo = '';
@@ -414,7 +426,10 @@
             return columnas;
         }
         
-        // Procesar CSV de Participantes
+        // ============================================
+        // PROCESAMIENTO CSV PARTICIPANTES
+        // ============================================
+        
         function procesarCSVParticipantes(csvText) {
             const lineas = csvText.split('\n');
             datosParticipaciones = {};
@@ -463,7 +478,10 @@
             rellenarSelector();
         }
         
-        // Procesar CSV de Premios
+        // ============================================
+        // PROCESAMIENTO CSV PREMIOS
+        // ============================================
+        
         function procesarCSVPremios(csvText) {
             const lineas = csvText.split('\n');
             datosPremios = [];
@@ -480,26 +498,48 @@
                 // Parsear CSV usando función robusta
                 const columnas = parseCSVLine(linea);
                 
-                // Validar que CSV tenga al menos 3 columnas (Premio, Bruto, Neto)
-                if (!columnas || columnas.length < 3) {
+                // Esperamos: Emoji | Premio | Neto_Decimo
+                // O bien:    Premio | Bruto | Neto (según tu estructura actual)
+                
+                // Detectar estructura: si tiene 3 columnas, la tercera es el Neto
+                if (columnas.length < 3) {
                     console.warn(`Fila ${i} de Premios descartada: menos de 3 columnas`, columnas);
                     continue;
                 }
                 
-                const nombrePremio = columnas[0].trim();
-                const bruto = parseFloat(columnas[1].replace(/[^0-9.-]/g, ''));
-                const neto = parseFloat(columnas[2].replace(/[^0-9.-]/g, ''));
+                // OPCIÓN A: Emoji | Premio | Neto
+                // OPCIÓN B: Premio | Bruto | Neto
+                
+                // Detectar si la primera columna es emoji (1-2 caracteres) o nombre largo
+                const col0 = columnas[0].trim();
+                let emoji = '';
+                let nombrePremio = '';
+                let netoDecimo = 0;
+                
+                // Si col0 es muy corto (1-3 caracteres), asumimos que es emoji
+                if (col0.length <= 3) {
+                    // Estructura: Emoji | Premio | Neto
+                    emoji = col0;
+                    nombrePremio = columnas[1].trim();
+                    netoDecimo = parseFloat(columnas[2].replace(/[^0-9.-]/g, ''));
+                } else {
+                    // Estructura: Premio | Bruto | Neto
+                    emoji = ''; // Sin emoji
+                    nombrePremio = col0;
+                    // Bruto en columnas[1], Neto en columnas[2]
+                    netoDecimo = parseFloat(columnas[2].replace(/[^0-9.-]/g, ''));
+                }
                 
                 // Validar datos
-                if (!nombrePremio || isNaN(bruto) || isNaN(neto)) {
+                if (!nombrePremio || isNaN(netoDecimo)) {
                     console.warn(`Fila ${i} de Premios descartada: datos inválidos`, columnas);
                     continue;
                 }
                 
                 datosPremios.push({
+                    emoji: emoji,
                     nombre: nombrePremio,
-                    bruto: bruto,
-                    neto: neto
+                    netoDecimo: netoDecimo
                 });
             }
             
@@ -508,11 +548,14 @@
             
             // Validar que se hayan cargado premios
             if (datosPremios.length === 0) {
-                throw new Error('La hoja Premios está vacía o tiene formato incorrecto. Debe tener las columnas: Premio, Bruto, Neto');
+                throw new Error('La hoja Premios está vacía o tiene formato incorrecto');
             }
         }
         
-        // Rellenar el selector de nombres
+        // ============================================
+        // INTERFAZ - RELLENAR SELECTOR
+        // ============================================
+        
         function rellenarSelector() {
             const selector = document.getElementById('nombreSelector');
             const nombres = Object.keys(datosParticipaciones).sort();
@@ -538,51 +581,129 @@
             console.log(`Selector poblado con ${nombres.length} nombres`);
         }
         
-        // Calcular y mostrar premios personalizados
-        function mostrarPremios(nombre) {
-            const participaciones = datosParticipaciones[nombre];
-            if (!participaciones) return;
+        // ============================================
+        // CÁLCULO DE MÉTRICAS DEL USUARIO
+        // ============================================
+        
+        function calcularMetricasUsuario(nombre) {
+            const numParticipaciones = datosParticipaciones[nombre] || 0;
             
-            // Cada participación = 4€ = 20% de un décimo completo (20€)
-            const porcentaje = (participaciones * 4) / 20;
-            const totalJugado = participaciones * 4;
+            // Cada participación = 4€
+            const totalJugado = numParticipaciones * 4;
             
-            // Actualizar tarjeta de información
-            document.getElementById('numParticipaciones').textContent = participaciones;
-            document.getElementById('totalJugado').textContent = `${totalJugado} €`;
-            document.getElementById('porcentajeTotal').textContent = `${(porcentaje * 100).toFixed(0)}%`;
+            // Porcentaje del décimo: (participaciones × 4 / 20) × 100%
+            const porcentajeDecimal = totalJugado / 20; // 0 a 1 (o más si >100%)
+            const porcentajeUsuario = porcentajeDecimal * 100;
+            
+            return {
+                numParticipaciones,
+                totalJugado,
+                porcentajeDecimal,
+                porcentajeUsuario
+            };
+        }
+        
+        // ============================================
+        // PINTAR TARJETA DE INFORMACIÓN
+        // ============================================
+        
+        function pintarTarjetaInfo(metricas) {
+            document.getElementById('numParticipaciones').textContent = 
+                metricas.numParticipaciones.toLocaleString('es-ES');
+            
+            document.getElementById('totalJugado').textContent = 
+                metricas.totalJugado.toLocaleString('es-ES', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }) + ' €';
+            
+            document.getElementById('porcentajeTotal').textContent = 
+                metricas.porcentajeUsuario.toLocaleString('es-ES', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }) + '%';
             
             // Mostrar tarjeta con animación
-            document.getElementById('infoCard').classList.add('active');
-            
-            // Solo mostrar tabla de premios si se cargó la hoja Premios
-            if (!cargaDatos.premios || datosPremios.length === 0) {
-                document.getElementById('premiosTable').classList.remove('active');
-                return;
-            }
-            
-            // Generar tabla de premios desde la hoja Premios
+            const infoCard = document.getElementById('infoCard');
+            infoCard.classList.add('active');
+        }
+        
+        // ============================================
+        // PINTAR TABLA DE PREMIOS
+        // ============================================
+        
+        function pintarTablaPremios(metricas) {
             const tbody = document.getElementById('premiosBody');
             tbody.innerHTML = '';
             
+            const porcentajeDecimal = metricas.porcentajeDecimal;
+            
             datosPremios.forEach(premio => {
                 // Calcular premio del usuario (redondeado a entero)
-                const premioUsuario = Math.round(premio.neto * porcentaje);
+                const premioUsuario = Math.round(premio.netoDecimo * porcentajeDecimal);
                 
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="premio-nombre">${premio.nombre}</td>
-                    <td>${premio.neto.toLocaleString('es-ES')} €</td>
-                    <td class="premio-cantidad">${premioUsuario.toLocaleString('es-ES')} €</td>
-                `;
+                
+                // Columna 1: Emoji + Nombre del premio
+                const tdPremio = document.createElement('td');
+                tdPremio.className = 'premio-nombre';
+                tdPremio.textContent = premio.emoji 
+                    ? `${premio.emoji} ${premio.nombre}` 
+                    : premio.nombre;
+                
+                // Columna 2: Premio neto por décimo completo
+                const tdDecimo = document.createElement('td');
+                tdDecimo.textContent = premio.netoDecimo.toLocaleString('es-ES', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }) + ' €';
+                
+                // Columna 3: Premio del usuario (neto)
+                const tdUsuario = document.createElement('td');
+                tdUsuario.className = 'premio-cantidad';
+                tdUsuario.textContent = premioUsuario.toLocaleString('es-ES', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }) + ' €';
+                
+                tr.appendChild(tdPremio);
+                tr.appendChild(tdDecimo);
+                tr.appendChild(tdUsuario);
+                
                 tbody.appendChild(tr);
             });
             
             // Mostrar tabla con animación
-            document.getElementById('premiosTable').classList.add('active');
+            const tabla = document.getElementById('premiosTable');
+            tabla.classList.add('active');
         }
         
-        // Mostrar mensaje de error
+        // ============================================
+        // MOSTRAR PREMIOS (ORQUESTADOR)
+        // ============================================
+        
+        function mostrarPremios(nombre) {
+            const participaciones = datosParticipaciones[nombre];
+            if (!participaciones) return;
+            
+            // Calcular métricas
+            const metricas = calcularMetricasUsuario(nombre);
+            
+            // Pintar tarjeta de información
+            pintarTarjetaInfo(metricas);
+            
+            // Pintar tabla de premios (solo si se cargó la hoja Premios)
+            if (cargaDatos.premios && datosPremios.length > 0) {
+                pintarTablaPremios(metricas);
+            } else {
+                document.getElementById('premiosTable').classList.remove('active');
+            }
+        }
+        
+        // ============================================
+        // UTILIDADES
+        // ============================================
+        
         function mostrarError(mensaje) {
             const errorDiv = document.getElementById('error');
             errorDiv.textContent = mensaje;
@@ -590,7 +711,10 @@
             document.getElementById('loading').style.display = 'none';
         }
         
-        // Event listener para el selector
+        // ============================================
+        // EVENT LISTENERS
+        // ============================================
+        
         document.getElementById('nombreSelector').addEventListener('change', function() {
             const nombre = this.value;
             if (nombre) {
@@ -601,6 +725,10 @@
                 document.getElementById('premiosTable').classList.remove('active');
             }
         });
+        
+        // ============================================
+        // INICIALIZACIÓN
+        // ============================================
         
         // Cargar datos al iniciar la página
         window.addEventListener('load', cargarDatosGoogleSheets);
