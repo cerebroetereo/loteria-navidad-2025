@@ -273,13 +273,12 @@
     </div>
 
     <script>
-        // CONFIGURACIÓN: Reemplaza con tu ID de Google Sheets
+        // CONFIGURACIÓN
         const SHEET_ID = '1_qKcfIR2dt6O_yGeEtN9BACDJryVj9U-iNCiCj21Bs0';
+        const SHEET_NAME = 'Participantes';
+        const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutos
         
-        const SHEET_NAME = 'Participantes'; // Ajusta el nombre de tu hoja
-        const API_KEY = 'TU_API_KEY_AQUI'; // Opcional si la hoja es pública
-        
-        // Definición de premios (por décimo completo de 20€)
+        // Definición de premios NETOS (por décimo completo de 20€)
         const PREMIOS = [
             { nombre: '🏆 El Gordo', bruto: 400000, neto: 328000 },
             { nombre: '🥈 Segundo Premio', bruto: 125000, neto: 108000 },
@@ -292,10 +291,9 @@
         
         let datosParticipaciones = {};
         
-        // Cargar datos desde Google Sheets (método público)
+        // Cargar datos desde Google Sheets
         async function cargarDatosGoogleSheets() {
             try {
-                // URL para leer Google Sheets en formato CSV (requiere que la hoja sea pública)
                 const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
                 
                 const response = await fetch(url);
@@ -313,31 +311,84 @@
             }
         }
         
-        // Procesar CSV
+        // Parser CSV robusto que maneja comillas, comas y caracteres especiales
+        function parseCSVLine(linea) {
+            const columnas = [];
+            let campo = '';
+            let dentroComillas = false;
+            
+            for (let j = 0; j < linea.length; j++) {
+                const char = linea[j];
+                
+                if (char === '"') {
+                    // Manejar comillas dobles escapadas ("")
+                    if (dentroComillas && linea[j + 1] === '"') {
+                        campo += '"';
+                        j++; // Saltar la siguiente comilla
+                    } else {
+                        dentroComillas = !dentroComillas;
+                    }
+                } else if (char === ',' && !dentroComillas) {
+                    // Fin de campo
+                    columnas.push(campo.trim());
+                    campo = '';
+                } else {
+                    campo += char;
+                }
+            }
+            
+            // Agregar el último campo
+            columnas.push(campo.trim());
+            
+            return columnas;
+        }
+        
+        // Procesar CSV con validaciones y normalización completa
         function procesarCSV(csvText) {
             const lineas = csvText.split('\n');
             datosParticipaciones = {};
             
+            console.log(`Procesando ${lineas.length} líneas del CSV...`);
+            
             // Saltar encabezado (primera línea)
             for (let i = 1; i < lineas.length; i++) {
                 const linea = lineas[i].trim();
+                
+                // Ignorar líneas completamente vacías
                 if (!linea) continue;
                 
-                // Parsear CSV (considerando comillas)
-                const columnas = linea.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-                if (!columnas || columnas.length < 2) continue;
+                // Parsear CSV usando función robusta
+                const columnas = parseCSVLine(linea);
                 
-                const nombre = columnas[1].replace(/^"|"$/g, '').trim();
-                if (!nombre || nombre === '') continue;
+                // CORRECCIÓN PUNTO 3: Validar que CSV tenga al menos 2 columnas
+                if (!columnas || columnas.length < 2) {
+                    console.warn(`Fila ${i} descartada: menos de 2 columnas`, columnas);
+                    continue;
+                }
                 
-                // Contar participaciones
+                // Columna 1 es el nombre (columna 0 es Participacion)
+                let nombre = columnas[1].trim();
+                
+                // Validar que la columna nombre no esté vacía
+                if (!nombre || nombre === '') {
+                    console.warn(`Fila ${i} descartada: nombre vacío`);
+                    continue;
+                }
+                
+                // CORRECCIÓN PUNTO 2: Normalización completa - eliminar espacios múltiples
+                nombre = nombre.replace(/\s+/g, ' ');
+                
+                // Contar participaciones (ignorando método de pago y orden de filas)
                 if (!datosParticipaciones[nombre]) {
                     datosParticipaciones[nombre] = 0;
                 }
                 datosParticipaciones[nombre]++;
             }
             
-            // Rellenar el selector
+            console.log('Datos procesados:', datosParticipaciones);
+            console.log(`Total de participantes únicos: ${Object.keys(datosParticipaciones).length}`);
+            
+            // Rellenar el selector con los nombres
             rellenarSelector();
         }
         
@@ -346,23 +397,33 @@
             const selector = document.getElementById('nombreSelector');
             const nombres = Object.keys(datosParticipaciones).sort();
             
+            // Validar que haya al menos 1 nombre
+            if (nombres.length === 0) {
+                console.warn('No se encontraron participantes en el CSV');
+                mostrarError('No se encontraron participantes. Verifica el contenido de la hoja de cálculo.');
+                return;
+            }
+            
             // Limpiar opciones existentes (excepto la primera)
             selector.innerHTML = '<option value="">-- Selecciona tu nombre --</option>';
             
+            // Generar opciones ordenadas alfabéticamente
             nombres.forEach(nombre => {
                 const option = document.createElement('option');
                 option.value = nombre;
                 option.textContent = nombre;
                 selector.appendChild(option);
             });
+            
+            console.log(`Selector poblado con ${nombres.length} nombres`);
         }
         
-        // Calcular y mostrar premios
+        // Calcular y mostrar premios personalizados
         function mostrarPremios(nombre) {
             const participaciones = datosParticipaciones[nombre];
             if (!participaciones) return;
             
-            // Cada participación es 4€ = 20% de un décimo
+            // Cada participación = 4€ = 20% de un décimo completo (20€)
             const porcentaje = (participaciones * 4) / 20;
             const totalJugado = participaciones * 4;
             
@@ -371,7 +432,7 @@
             document.getElementById('totalJugado').textContent = `${totalJugado} €`;
             document.getElementById('porcentajeTotal').textContent = `${(porcentaje * 100).toFixed(0)}%`;
             
-            // Mostrar tarjeta
+            // Mostrar tarjeta con animación
             document.getElementById('infoCard').classList.add('active');
             
             // Generar tabla de premios
@@ -379,6 +440,7 @@
             tbody.innerHTML = '';
             
             PREMIOS.forEach(premio => {
+                // Calcular premio del usuario (redondeado a entero)
                 const premioUsuario = Math.round(premio.neto * porcentaje);
                 
                 const tr = document.createElement('tr');
@@ -390,11 +452,11 @@
                 tbody.appendChild(tr);
             });
             
-            // Mostrar tabla
+            // Mostrar tabla con animación
             document.getElementById('premiosTable').classList.add('active');
         }
         
-        // Mostrar error
+        // Mostrar mensaje de error
         function mostrarError(mensaje) {
             const errorDiv = document.getElementById('error');
             errorDiv.textContent = mensaje;
@@ -408,18 +470,17 @@
             if (nombre) {
                 mostrarPremios(nombre);
             } else {
+                // Ocultar tarjeta y tabla al deseleccionar
                 document.getElementById('infoCard').classList.remove('active');
                 document.getElementById('premiosTable').classList.remove('active');
             }
         });
         
-        // Cargar datos al iniciar
+        // Cargar datos al iniciar la página
         window.addEventListener('load', cargarDatosGoogleSheets);
         
-        // Recargar datos cada 5 minutos
-        setInterval(cargarDatosGoogleSheets, 5 * 60 * 1000);
+        // Recargar datos automáticamente cada 5 minutos
+        setInterval(cargarDatosGoogleSheets, POLLING_INTERVAL);
     </script>
 </body>
 </html>
-<!--Prueba-->
-
