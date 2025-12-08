@@ -313,6 +313,40 @@
             }
         }
         
+        // Función auxiliar para parsear líneas CSV correctamente
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                const nextChar = line[i + 1];
+                
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        // Comilla doble escapada
+                        current += '"';
+                        i++; // Saltar la siguiente comilla
+                    } else {
+                        // Inicio o fin de campo entrecomillado
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    // Fin de campo
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            // Agregar el último campo
+            result.push(current);
+            
+            return result;
+        }
+        
         // Procesar CSV
         function procesarCSV(csvText) {
             const lineas = csvText.split('\n');
@@ -323,14 +357,15 @@
                 const linea = lineas[i].trim();
                 if (!linea) continue;
                 
-                // Parsear CSV (considerando comillas)
-                const columnas = linea.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+                // Parsear CSV de forma más robusta
+                const columnas = parseCSVLine(linea);
                 if (!columnas || columnas.length < 2) continue;
                 
-                const nombre = columnas[1].replace(/^"|"$/g, '').trim();
+                // El nombre está en la segunda columna (índice 1)
+                const nombre = columnas[1].trim();
                 if (!nombre || nombre === '') continue;
                 
-                // Contar participaciones
+                // Contar participaciones acumuladas por nombre
                 if (!datosParticipaciones[nombre]) {
                     datosParticipaciones[nombre] = 0;
                 }
@@ -421,5 +456,3 @@
     </script>
 </body>
 </html>
-<!--Prueba-->
-
