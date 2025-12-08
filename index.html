@@ -204,6 +204,26 @@
             font-size: 0.9em;
         }
         
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .status-indicator.success {
+            background: #4caf50;
+        }
+        
+        .status-indicator.warning {
+            background: #ff9800;
+        }
+        
+        .status-indicator.error {
+            background: #f44336;
+        }
+        
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -234,7 +254,10 @@
             </select>
         </div>
         
-        <div id="loading" class="loading">Cargando datos...</div>
+        <div id="loading" class="loading">
+            <span class="status-indicator warning"></span>
+            Cargando datos desde Google Sheets...
+        </div>
         <div id="error" class="error"></div>
         
         <div id="infoCard" class="info-card">
@@ -268,7 +291,10 @@
         
         <div class="footer">
             <p>Los importes mostrados son NETOS (impuestos ya descontados)</p>
-            <p>Última actualización: <span id="ultimaActualizacion">-</span></p>
+            <p>
+                <span class="status-indicator success"></span>
+                Última actualización: <span id="ultimaActualizacion">-</span>
+            </p>
         </div>
     </div>
 
@@ -282,31 +308,78 @@
         // Variables globales
         let datosParticipaciones = {};
         let datosPremios = [];
+        let cargaDatos = { participantes: false, premios: false };
         
         // Cargar datos desde Google Sheets (ambas hojas)
         async function cargarDatosGoogleSheets() {
             try {
-                // Cargar hoja Participantes
-                const urlParticipantes = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PARTICIPANTES)}`;
-                const responseParticipantes = await fetch(urlParticipantes);
-                if (!responseParticipantes.ok) throw new Error('Error al cargar la hoja Participantes');
-                const csvParticipantes = await responseParticipantes.text();
-                procesarCSVParticipantes(csvParticipantes);
+                // Resetear estado de carga
+                cargaDatos = { participantes: false, premios: false };
                 
-                // Cargar hoja Premios
-                const urlPremios = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PREMIOS)}`;
-                const responsePremios = await fetch(urlPremios);
-                if (!responsePremios.ok) throw new Error('Error al cargar la hoja Premios');
-                const csvPremios = await responsePremios.text();
-                procesarCSVPremios(csvPremios);
+                // Cargar ambas hojas en paralelo
+                const [resultadoParticipantes, resultadoPremios] = await Promise.allSettled([
+                    cargarHojaParticipantes(),
+                    cargarHojaPremios()
+                ]);
+                
+                // Verificar resultados
+                if (resultadoParticipantes.status === 'fulfilled') {
+                    cargaDatos.participantes = true;
+                    console.log('✓ Hoja Participantes cargada correctamente');
+                } else {
+                    console.error('✗ Error en hoja Participantes:', resultadoParticipantes.reason);
+                }
+                
+                if (resultadoPremios.status === 'fulfilled') {
+                    cargaDatos.premios = true;
+                    console.log('✓ Hoja Premios cargada correctamente');
+                } else {
+                    console.error('✗ Error en hoja Premios:', resultadoPremios.reason);
+                }
+                
+                // Validar que al menos Participantes se haya cargado
+                if (!cargaDatos.participantes) {
+                    throw new Error('No se pudo cargar la hoja Participantes');
+                }
+                
+                // Advertir si Premios no se cargó
+                if (!cargaDatos.premios) {
+                    mostrarError('⚠️ Advertencia: La hoja "Premios" no se pudo cargar. Verifica que exista y sea pública. El cálculo de premios no estará disponible.');
+                }
                 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('ultimaActualizacion').textContent = new Date().toLocaleString('es-ES');
                 
             } catch (error) {
-                console.error('Error:', error);
-                mostrarError('No se pudieron cargar los datos. Verifica que ambas hojas (Participantes y Premios) sean públicas y estén correctamente nombradas.');
+                console.error('Error crítico:', error);
+                mostrarError(`Error crítico: ${error.message}. Verifica que las hojas "Participantes" y "Premios" existan y sean públicas.`);
             }
+        }
+        
+        // Cargar hoja Participantes
+        async function cargarHojaParticipantes() {
+            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PARTICIPANTES)}`;
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: No se pudo acceder a la hoja Participantes`);
+            }
+            
+            const csv = await response.text();
+            procesarCSVParticipantes(csv);
+        }
+        
+        // Cargar hoja Premios
+        async function cargarHojaPremios() {
+            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PREMIOS)}`;
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: No se pudo acceder a la hoja Premios`);
+            }
+            
+            const csv = await response.text();
+            procesarCSVPremios(csv);
         }
         
         // Parser CSV robusto que maneja comillas, comas y caracteres especiales
@@ -358,7 +431,7 @@
                 // Parsear CSV usando función robusta
                 const columnas = parseCSVLine(linea);
                 
-                // Validar que CSV tenga al menos 2 columnas
+                // Validar que CSV tenga al menos 2 columnas (Participacion, Nombre)
                 if (!columnas || columnas.length < 2) {
                     console.warn(`Fila ${i} descartada: menos de 2 columnas`, columnas);
                     continue;
@@ -435,8 +508,7 @@
             
             // Validar que se hayan cargado premios
             if (datosPremios.length === 0) {
-                console.error('No se cargó ningún premio desde la hoja Premios');
-                mostrarError('Error: La hoja Premios está vacía o tiene formato incorrecto. Debe tener las columnas: Premio, Bruto, Neto');
+                throw new Error('La hoja Premios está vacía o tiene formato incorrecto. Debe tener las columnas: Premio, Bruto, Neto');
             }
         }
         
@@ -471,12 +543,6 @@
             const participaciones = datosParticipaciones[nombre];
             if (!participaciones) return;
             
-            // Validar que haya premios cargados
-            if (datosPremios.length === 0) {
-                mostrarError('No se pueden calcular premios porque la hoja Premios no se cargó correctamente.');
-                return;
-            }
-            
             // Cada participación = 4€ = 20% de un décimo completo (20€)
             const porcentaje = (participaciones * 4) / 20;
             const totalJugado = participaciones * 4;
@@ -488,6 +554,12 @@
             
             // Mostrar tarjeta con animación
             document.getElementById('infoCard').classList.add('active');
+            
+            // Solo mostrar tabla de premios si se cargó la hoja Premios
+            if (!cargaDatos.premios || datosPremios.length === 0) {
+                document.getElementById('premiosTable').classList.remove('active');
+                return;
+            }
             
             // Generar tabla de premios desde la hoja Premios
             const tbody = document.getElementById('premiosBody');
