@@ -275,39 +275,37 @@
     <script>
         // CONFIGURACIÓN
         const SHEET_ID = '1_qKcfIR2dt6O_yGeEtN9BACDJryVj9U-iNCiCj21Bs0';
-        const SHEET_NAME = 'Participantes';
+        const SHEET_PARTICIPANTES = 'Participantes';
+        const SHEET_PREMIOS = 'Premios';
         const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutos
         
-        // Definición de premios NETOS (por décimo completo de 20€)
-        const PREMIOS = [
-            { nombre: '🏆 El Gordo', bruto: 400000, neto: 328000 },
-            { nombre: '🥈 Segundo Premio', bruto: 125000, neto: 108000 },
-            { nombre: '🥉 Tercer Premio', bruto: 50000, neto: 48000 },
-            { nombre: '🎖️ Cuarto Premio', bruto: 20000, neto: 20000 },
-            { nombre: '🎖️ Quinto Premio', bruto: 6000, neto: 6000 },
-            { nombre: '💰 Pedrea/Terminaciones', bruto: 100, neto: 100 },
-            { nombre: '🎫 Reintegro', bruto: 20, neto: 20 }
-        ];
-        
+        // Variables globales
         let datosParticipaciones = {};
+        let datosPremios = [];
         
-        // Cargar datos desde Google Sheets
+        // Cargar datos desde Google Sheets (ambas hojas)
         async function cargarDatosGoogleSheets() {
             try {
-                const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+                // Cargar hoja Participantes
+                const urlParticipantes = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PARTICIPANTES)}`;
+                const responseParticipantes = await fetch(urlParticipantes);
+                if (!responseParticipantes.ok) throw new Error('Error al cargar la hoja Participantes');
+                const csvParticipantes = await responseParticipantes.text();
+                procesarCSVParticipantes(csvParticipantes);
                 
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Error al cargar los datos');
-                
-                const csvText = await response.text();
-                procesarCSV(csvText);
+                // Cargar hoja Premios
+                const urlPremios = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PREMIOS)}`;
+                const responsePremios = await fetch(urlPremios);
+                if (!responsePremios.ok) throw new Error('Error al cargar la hoja Premios');
+                const csvPremios = await responsePremios.text();
+                procesarCSVPremios(csvPremios);
                 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('ultimaActualizacion').textContent = new Date().toLocaleString('es-ES');
                 
             } catch (error) {
                 console.error('Error:', error);
-                mostrarError('No se pudieron cargar los datos. Verifica que la hoja de cálculo sea pública.');
+                mostrarError('No se pudieron cargar los datos. Verifica que ambas hojas (Participantes y Premios) sean públicas y estén correctamente nombradas.');
             }
         }
         
@@ -343,12 +341,12 @@
             return columnas;
         }
         
-        // Procesar CSV con validaciones y normalización completa
-        function procesarCSV(csvText) {
+        // Procesar CSV de Participantes
+        function procesarCSVParticipantes(csvText) {
             const lineas = csvText.split('\n');
             datosParticipaciones = {};
             
-            console.log(`Procesando ${lineas.length} líneas del CSV...`);
+            console.log(`Procesando ${lineas.length} líneas de Participantes...`);
             
             // Saltar encabezado (primera línea)
             for (let i = 1; i < lineas.length; i++) {
@@ -360,7 +358,7 @@
                 // Parsear CSV usando función robusta
                 const columnas = parseCSVLine(linea);
                 
-                // CORRECCIÓN PUNTO 3: Validar que CSV tenga al menos 2 columnas
+                // Validar que CSV tenga al menos 2 columnas
                 if (!columnas || columnas.length < 2) {
                     console.warn(`Fila ${i} descartada: menos de 2 columnas`, columnas);
                     continue;
@@ -375,21 +373,71 @@
                     continue;
                 }
                 
-                // CORRECCIÓN PUNTO 2: Normalización completa - eliminar espacios múltiples
+                // Normalización completa - eliminar espacios múltiples
                 nombre = nombre.replace(/\s+/g, ' ');
                 
-                // Contar participaciones (ignorando método de pago y orden de filas)
+                // Contar participaciones
                 if (!datosParticipaciones[nombre]) {
                     datosParticipaciones[nombre] = 0;
                 }
                 datosParticipaciones[nombre]++;
             }
             
-            console.log('Datos procesados:', datosParticipaciones);
+            console.log('Datos de participaciones procesados:', datosParticipaciones);
             console.log(`Total de participantes únicos: ${Object.keys(datosParticipaciones).length}`);
             
             // Rellenar el selector con los nombres
             rellenarSelector();
+        }
+        
+        // Procesar CSV de Premios
+        function procesarCSVPremios(csvText) {
+            const lineas = csvText.split('\n');
+            datosPremios = [];
+            
+            console.log(`Procesando ${lineas.length} líneas de Premios...`);
+            
+            // Saltar encabezado (primera línea)
+            for (let i = 1; i < lineas.length; i++) {
+                const linea = lineas[i].trim();
+                
+                // Ignorar líneas completamente vacías
+                if (!linea) continue;
+                
+                // Parsear CSV usando función robusta
+                const columnas = parseCSVLine(linea);
+                
+                // Validar que CSV tenga al menos 3 columnas (Premio, Bruto, Neto)
+                if (!columnas || columnas.length < 3) {
+                    console.warn(`Fila ${i} de Premios descartada: menos de 3 columnas`, columnas);
+                    continue;
+                }
+                
+                const nombrePremio = columnas[0].trim();
+                const bruto = parseFloat(columnas[1].replace(/[^0-9.-]/g, ''));
+                const neto = parseFloat(columnas[2].replace(/[^0-9.-]/g, ''));
+                
+                // Validar datos
+                if (!nombrePremio || isNaN(bruto) || isNaN(neto)) {
+                    console.warn(`Fila ${i} de Premios descartada: datos inválidos`, columnas);
+                    continue;
+                }
+                
+                datosPremios.push({
+                    nombre: nombrePremio,
+                    bruto: bruto,
+                    neto: neto
+                });
+            }
+            
+            console.log('Datos de premios procesados:', datosPremios);
+            console.log(`Total de premios cargados: ${datosPremios.length}`);
+            
+            // Validar que se hayan cargado premios
+            if (datosPremios.length === 0) {
+                console.error('No se cargó ningún premio desde la hoja Premios');
+                mostrarError('Error: La hoja Premios está vacía o tiene formato incorrecto. Debe tener las columnas: Premio, Bruto, Neto');
+            }
         }
         
         // Rellenar el selector de nombres
@@ -400,7 +448,7 @@
             // Validar que haya al menos 1 nombre
             if (nombres.length === 0) {
                 console.warn('No se encontraron participantes en el CSV');
-                mostrarError('No se encontraron participantes. Verifica el contenido de la hoja de cálculo.');
+                mostrarError('No se encontraron participantes. Verifica el contenido de la hoja Participantes.');
                 return;
             }
             
@@ -423,6 +471,12 @@
             const participaciones = datosParticipaciones[nombre];
             if (!participaciones) return;
             
+            // Validar que haya premios cargados
+            if (datosPremios.length === 0) {
+                mostrarError('No se pueden calcular premios porque la hoja Premios no se cargó correctamente.');
+                return;
+            }
+            
             // Cada participación = 4€ = 20% de un décimo completo (20€)
             const porcentaje = (participaciones * 4) / 20;
             const totalJugado = participaciones * 4;
@@ -435,11 +489,11 @@
             // Mostrar tarjeta con animación
             document.getElementById('infoCard').classList.add('active');
             
-            // Generar tabla de premios
+            // Generar tabla de premios desde la hoja Premios
             const tbody = document.getElementById('premiosBody');
             tbody.innerHTML = '';
             
-            PREMIOS.forEach(premio => {
+            datosPremios.forEach(premio => {
                 // Calcular premio del usuario (redondeado a entero)
                 const premioUsuario = Math.round(premio.neto * porcentaje);
                 
