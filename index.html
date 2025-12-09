@@ -199,6 +199,34 @@
             display: block;
         }
         
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .warning.active {
+            display: block;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+            border-left: 4px solid #28a745;
+        }
+        
+        .success.active {
+            display: block;
+        }
+        
         .footer {
             text-align: center;
             margin-top: 30px;
@@ -242,6 +270,20 @@
                 font-size: 0.9em;
             }
         }
+        
+        .debug-info {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 0.85em;
+            color: #555;
+            display: none;
+        }
+        
+        .debug-info.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -263,6 +305,8 @@
             Cargando datos desde Google Sheets...
         </div>
         <div id="error" class="error"></div>
+        <div id="warning" class="warning"></div>
+        <div id="success" class="success"></div>
         
         <div id="infoCard" class="info-card">
             <div class="info-row">
@@ -293,6 +337,11 @@
             </table>
         </div>
         
+        <div id="debugInfo" class="debug-info">
+            <strong>Debug Info:</strong>
+            <div id="debugContent"></div>
+        </div>
+        
         <div class="footer">
             <p>Los importes mostrados son NETOS (impuestos ya descontados)</p>
             <p>
@@ -310,6 +359,7 @@
         const SHEET_PARTICIPANTES = 'Participantes';
         const SHEET_PREMIOS = 'Premios';
         const POLLING_INTERVAL = 5 * 60 * 1000; // 5 minutos
+        const DEBUG_MODE = true; // Cambiar a false en producción
         
         // ============================================
         // VARIABLES GLOBALES
@@ -319,11 +369,48 @@
         let cargaDatos = { participantes: false, premios: false };
         
         // ============================================
+        // UTILIDADES
+        // ============================================
+        
+        function mostrarMensaje(tipo, mensaje) {
+            // Ocultar todos los mensajes primero
+            document.getElementById('error').classList.remove('active');
+            document.getElementById('warning').classList.remove('active');
+            document.getElementById('success').classList.remove('active');
+            
+            // Mostrar el mensaje apropiado
+            const elemento = document.getElementById(tipo);
+            if (elemento) {
+                elemento.textContent = mensaje;
+                elemento.classList.add('active');
+            }
+            
+            if (tipo === 'error' || tipo === 'warning') {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        function log(mensaje, datos = null) {
+            if (DEBUG_MODE) {
+                console.log(mensaje, datos || '');
+                const debugContent = document.getElementById('debugContent');
+                const debugInfo = document.getElementById('debugInfo');
+                if (debugContent) {
+                    const timestamp = new Date().toLocaleTimeString('es-ES');
+                    debugContent.innerHTML += `<div>[${timestamp}] ${mensaje}</div>`;
+                    debugInfo.classList.add('active');
+                }
+            }
+        }
+        
+        // ============================================
         // CARGA DE DATOS DESDE GOOGLE SHEETS
         // ============================================
         
         async function cargarDatosGoogleSheets() {
             try {
+                log('🚀 Iniciando carga de datos...');
+                
                 // Resetear estado de carga
                 cargaDatos = { participantes: false, premios: false };
                 
@@ -336,58 +423,63 @@
                 // Verificar resultados
                 if (resultadoParticipantes.status === 'fulfilled') {
                     cargaDatos.participantes = true;
-                    console.log('✓ Hoja Participantes cargada correctamente');
+                    log('✅ Hoja Participantes cargada correctamente');
                 } else {
-                    console.error('✗ Error en hoja Participantes:', resultadoParticipantes.reason);
+                    log('❌ Error en hoja Participantes:', resultadoParticipantes.reason);
+                    throw new Error(`Error al cargar Participantes: ${resultadoParticipantes.reason.message}`);
                 }
                 
                 if (resultadoPremios.status === 'fulfilled') {
                     cargaDatos.premios = true;
-                    console.log('✓ Hoja Premios cargada correctamente');
+                    log('✅ Hoja Premios cargada correctamente');
+                    mostrarMensaje('success', `✓ Datos cargados correctamente. ${Object.keys(datosParticipaciones).length} participantes y ${datosPremios.length} premios encontrados.`);
                 } else {
-                    console.error('✗ Error en hoja Premios:', resultadoPremios.reason);
-                }
-                
-                // Validar que al menos Participantes se haya cargado
-                if (!cargaDatos.participantes) {
-                    throw new Error('No se pudo cargar la hoja Participantes');
-                }
-                
-                // Advertir si Premios no se cargó
-                if (!cargaDatos.premios) {
-                    mostrarError('⚠️ Advertencia: La hoja "Premios" no se pudo cargar. Verifica que exista y sea pública. El cálculo de premios no estará disponible.');
+                    log('⚠️ Error en hoja Premios:', resultadoPremios.reason);
+                    mostrarMensaje('warning', `⚠️ Advertencia: La hoja "Premios" no se pudo cargar. Verifica que exista en Google Sheets con las columnas: Emoji (opcional), Premio, Neto. Los participantes se mostrarán pero no los premios.`);
                 }
                 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('ultimaActualizacion').textContent = new Date().toLocaleString('es-ES');
                 
             } catch (error) {
-                console.error('Error crítico:', error);
-                mostrarError(`Error crítico: ${error.message}. Verifica que las hojas "Participantes" y "Premios" existan y sean públicas.`);
+                log('❌ Error crítico:', error);
+                mostrarMensaje('error', `❌ Error crítico: ${error.message}. Verifica que el Google Sheets sea público y tenga las hojas "Participantes" y "Premios".`);
             }
         }
         
         async function cargarHojaParticipantes() {
+            log(`📥 Cargando hoja "${SHEET_PARTICIPANTES}"...`);
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PARTICIPANTES)}`;
+            
             const response = await fetch(url);
             
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: No se pudo acceder a la hoja Participantes`);
+                throw new Error(`HTTP ${response.status}: No se pudo acceder a la hoja Participantes. ¿El Google Sheets es público?`);
             }
             
             const csv = await response.text();
+            log(`📄 CSV Participantes recibido (${csv.length} caracteres)`);
             procesarCSVParticipantes(csv);
         }
         
         async function cargarHojaPremios() {
+            log(`📥 Cargando hoja "${SHEET_PREMIOS}"...`);
             const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PREMIOS)}`;
+            
             const response = await fetch(url);
             
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: No se pudo acceder a la hoja Premios`);
+                throw new Error(`HTTP ${response.status}: No se pudo acceder a la hoja Premios. ¿Existe la hoja con ese nombre exacto?`);
             }
             
             const csv = await response.text();
+            log(`📄 CSV Premios recibido (${csv.length} caracteres)`);
+            
+            // Validar que el CSV no esté vacío
+            if (csv.trim().length === 0) {
+                throw new Error('La hoja Premios está vacía');
+            }
+            
             procesarCSVPremios(csv);
         }
         
@@ -434,7 +526,7 @@
             const lineas = csvText.split('\n');
             datosParticipaciones = {};
             
-            console.log(`Procesando ${lineas.length} líneas de Participantes...`);
+            log(`📊 Procesando ${lineas.length} líneas de Participantes...`);
             
             // Saltar encabezado (primera línea)
             for (let i = 1; i < lineas.length; i++) {
@@ -448,7 +540,6 @@
                 
                 // Validar que CSV tenga al menos 2 columnas (Participacion, Nombre)
                 if (!columnas || columnas.length < 2) {
-                    console.warn(`Fila ${i} descartada: menos de 2 columnas`, columnas);
                     continue;
                 }
                 
@@ -457,7 +548,6 @@
                 
                 // Validar que la columna nombre no esté vacía
                 if (!nombre || nombre === '') {
-                    console.warn(`Fila ${i} descartada: nombre vacío`);
                     continue;
                 }
                 
@@ -471,8 +561,12 @@
                 datosParticipaciones[nombre]++;
             }
             
-            console.log('Datos de participaciones procesados:', datosParticipaciones);
-            console.log(`Total de participantes únicos: ${Object.keys(datosParticipaciones).length}`);
+            log(`✅ ${Object.keys(datosParticipaciones).length} participantes únicos encontrados`);
+            
+            // Validar que haya al menos 1 participante
+            if (Object.keys(datosParticipaciones).length === 0) {
+                throw new Error('No se encontraron participantes en la hoja. Verifica el formato CSV.');
+            }
             
             // Rellenar el selector con los nombres
             rellenarSelector();
@@ -486,9 +580,42 @@
             const lineas = csvText.split('\n');
             datosPremios = [];
             
-            console.log(`Procesando ${lineas.length} líneas de Premios...`);
+            log(`📊 Procesando ${lineas.length} líneas de Premios...`);
             
-            // Saltar encabezado (primera línea)
+            // Detectar el encabezado para entender la estructura
+            if (lineas.length < 2) {
+                throw new Error('La hoja Premios debe tener al menos un encabezado y una fila de datos');
+            }
+            
+            const encabezado = parseCSVLine(lineas[0]);
+            log(`📋 Encabezado detectado:`, encabezado);
+            
+            // Detectar índices de columnas
+            let idxEmoji = -1;
+            let idxPremio = -1;
+            let idxNeto = -1;
+            
+            for (let i = 0; i < encabezado.length; i++) {
+                const col = encabezado[i].toLowerCase().trim();
+                if (col.includes('emoji')) idxEmoji = i;
+                else if (col.includes('premio') || col.includes('nombre')) idxPremio = i;
+                else if (col.includes('neto')) idxNeto = i;
+            }
+            
+            log(`🔍 Índices detectados - Emoji: ${idxEmoji}, Premio: ${idxPremio}, Neto: ${idxNeto}`);
+            
+            // Si no se detectó Neto, intentar usar la última columna
+            if (idxNeto === -1 && encabezado.length >= 2) {
+                idxNeto = encabezado.length - 1;
+                log(`⚠️ Columna "Neto" no encontrada, usando última columna (${idxNeto})`);
+            }
+            
+            // Validar que al menos tengamos Premio y Neto
+            if (idxPremio === -1 || idxNeto === -1) {
+                throw new Error(`Estructura de hoja Premios incorrecta. Encabezado encontrado: "${encabezado.join(', ')}". Se esperaba: "Premio, Neto" o "Emoji, Premio, Neto"`);
+            }
+            
+            // Procesar filas de datos (saltar encabezado)
             for (let i = 1; i < lineas.length; i++) {
                 const linea = lineas[i].trim();
                 
@@ -498,41 +625,29 @@
                 // Parsear CSV usando función robusta
                 const columnas = parseCSVLine(linea);
                 
-                // Esperamos: Emoji | Premio | Neto_Decimo
-                // O bien:    Premio | Bruto | Neto (según tu estructura actual)
-                
-                // Detectar estructura: si tiene 3 columnas, la tercera es el Neto
-                if (columnas.length < 3) {
-                    console.warn(`Fila ${i} de Premios descartada: menos de 3 columnas`, columnas);
+                // Validar que haya suficientes columnas
+                if (columnas.length <= Math.max(idxPremio, idxNeto)) {
+                    log(`⚠️ Fila ${i} descartada: columnas insuficientes`, columnas);
                     continue;
                 }
                 
-                // OPCIÓN A: Emoji | Premio | Neto
-                // OPCIÓN B: Premio | Bruto | Neto
+                // Extraer datos
+                const emoji = (idxEmoji >= 0) ? columnas[idxEmoji].trim() : '';
+                const nombrePremio = columnas[idxPremio].trim();
+                const netoStr = columnas[idxNeto].trim();
                 
-                // Detectar si la primera columna es emoji (1-2 caracteres) o nombre largo
-                const col0 = columnas[0].trim();
-                let emoji = '';
-                let nombrePremio = '';
-                let netoDecimo = 0;
-                
-                // Si col0 es muy corto (1-3 caracteres), asumimos que es emoji
-                if (col0.length <= 3) {
-                    // Estructura: Emoji | Premio | Neto
-                    emoji = col0;
-                    nombrePremio = columnas[1].trim();
-                    netoDecimo = parseFloat(columnas[2].replace(/[^0-9.-]/g, ''));
-                } else {
-                    // Estructura: Premio | Bruto | Neto
-                    emoji = ''; // Sin emoji
-                    nombrePremio = col0;
-                    // Bruto en columnas[1], Neto en columnas[2]
-                    netoDecimo = parseFloat(columnas[2].replace(/[^0-9.-]/g, ''));
+                // Validar nombre del premio
+                if (!nombrePremio || nombrePremio === '') {
+                    log(`⚠️ Fila ${i} descartada: nombre de premio vacío`);
+                    continue;
                 }
                 
-                // Validar datos
-                if (!nombrePremio || isNaN(netoDecimo)) {
-                    console.warn(`Fila ${i} de Premios descartada: datos inválidos`, columnas);
+                // Parsear valor neto (eliminar símbolos de moneda, puntos de miles, etc.)
+                const netoDecimo = parseFloat(netoStr.replace(/[^0-9.-]/g, ''));
+                
+                // Validar valor numérico
+                if (isNaN(netoDecimo) || netoDecimo <= 0) {
+                    log(`⚠️ Fila ${i} descartada: valor Neto inválido "${netoStr}"`);
                     continue;
                 }
                 
@@ -541,14 +656,15 @@
                     nombre: nombrePremio,
                     netoDecimo: netoDecimo
                 });
+                
+                log(`✅ Premio cargado: ${emoji} ${nombrePremio} = ${netoDecimo.toLocaleString('es-ES')} €`);
             }
             
-            console.log('Datos de premios procesados:', datosPremios);
-            console.log(`Total de premios cargados: ${datosPremios.length}`);
+            log(`✅ ${datosPremios.length} premios cargados correctamente`);
             
             // Validar que se hayan cargado premios
             if (datosPremios.length === 0) {
-                throw new Error('La hoja Premios está vacía o tiene formato incorrecto');
+                throw new Error('No se encontraron premios válidos en la hoja. Verifica que tenga datos y el formato sea correcto.');
             }
         }
         
@@ -559,13 +675,6 @@
         function rellenarSelector() {
             const selector = document.getElementById('nombreSelector');
             const nombres = Object.keys(datosParticipaciones).sort();
-            
-            // Validar que haya al menos 1 nombre
-            if (nombres.length === 0) {
-                console.warn('No se encontraron participantes en el CSV');
-                mostrarError('No se encontraron participantes. Verifica el contenido de la hoja Participantes.');
-                return;
-            }
             
             // Limpiar opciones existentes (excepto la primera)
             selector.innerHTML = '<option value="">-- Selecciona tu nombre --</option>';
@@ -578,7 +687,7 @@
                 selector.appendChild(option);
             });
             
-            console.log(`Selector poblado con ${nombres.length} nombres`);
+            log(`✅ Selector poblado con ${nombres.length} nombres`);
         }
         
         // ============================================
@@ -619,8 +728,8 @@
             
             document.getElementById('porcentajeTotal').textContent = 
                 metricas.porcentajeUsuario.toLocaleString('es-ES', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
                 }) + '%';
             
             // Mostrar tarjeta con animación
@@ -639,8 +748,8 @@
             const porcentajeDecimal = metricas.porcentajeDecimal;
             
             datosPremios.forEach(premio => {
-                // Calcular premio del usuario (redondeado a entero)
-                const premioUsuario = Math.round(premio.netoDecimo * porcentajeDecimal);
+                // Calcular premio del usuario (redondeado a 2 decimales)
+                const premioUsuario = Math.round(premio.netoDecimo * porcentajeDecimal * 100) / 100;
                 
                 const tr = document.createElement('tr');
                 
@@ -662,8 +771,8 @@
                 const tdUsuario = document.createElement('td');
                 tdUsuario.className = 'premio-cantidad';
                 tdUsuario.textContent = premioUsuario.toLocaleString('es-ES', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
                 }) + ' €';
                 
                 tr.appendChild(tdPremio);
@@ -686,6 +795,8 @@
             const participaciones = datosParticipaciones[nombre];
             if (!participaciones) return;
             
+            log(`👤 Mostrando datos para: ${nombre}`);
+            
             // Calcular métricas
             const metricas = calcularMetricasUsuario(nombre);
             
@@ -698,17 +809,6 @@
             } else {
                 document.getElementById('premiosTable').classList.remove('active');
             }
-        }
-        
-        // ============================================
-        // UTILIDADES
-        // ============================================
-        
-        function mostrarError(mensaje) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = mensaje;
-            errorDiv.classList.add('active');
-            document.getElementById('loading').style.display = 'none';
         }
         
         // ============================================
