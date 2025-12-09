@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ranking Participantes - Lotería Navidad 2025</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .nav-links {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .nav-links a {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            font-weight: 600;
+        }
+        
+        .nav-links a:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .ranking-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+        
+        .stat-card h3 {
+            font-size: 0.9em;
+            margin-bottom: 10px;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-card p {
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 1.2em;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Ranking de Participantes</h1>
+            <p>Inversión por participante en la Lotería de Navidad 2025</p>
+        </div>
+        
+        <div class="nav-links">
+            <a href="index.html">← Volver a Consulta Individual</a>
+        </div>
+        
+        <div id="loading" class="loading">
+            🔄 Cargando datos desde Google Sheets...
+        </div>
+        
+        <div id="contentSection" style="display: none;">
+            <div class="ranking-cards" id="rankingCards"></div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Participantes</h3>
+                    <p id="totalParticipantes">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Invertido</h3>
+                    <p id="totalInvertido">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Inversión Media</h3>
+                    <p id="inversionMedia">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Mayor Inversión</h3>
+                    <p id="mayorInversion">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // CONFIGURACIÓN
+        // ============================================
+        const SHEET_ID = '1_qKcfIR2dt6O_yGeEtN9BACDJryVj9U-iNCiCj21Bs0';
+        const SHEET_PARTICIPANTES = 'Participantes';
+        
+        let datosParticipaciones = {};
+        
+        // ============================================
+        // CARGA DE DATOS
+        // ============================================
+        async function cargarDatos() {
+            try {
+                const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_PARTICIPANTES)}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error('No se pudo acceder a Google Sheets. Verifica que el documento sea público.');
+                }
+                
+                const csv = await response.text();
+                procesarCSV(csv);
+                generarRanking();
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('contentSection').style.display = 'block';
+            } catch (error) {
+                document.getElementById('loading').innerHTML = `
+                    <div style="color: #c33; background: #fee; padding: 20px; border-radius: 10px;">
+                        ❌ Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // ============================================
+        // PARSER CSV
+        // ============================================
+        function parseCSVLine(linea) {
+            const columnas = [];
+            let campo = '';
+            let dentroComillas = false;
+            
+            for (let j = 0; j < linea.length; j++) {
+                const char = linea[j];
+                
+                if (char === '"') {
+                    if (dentroComillas && linea[j + 1] === '"') {
+                        campo += '"';
+                        j++;
+                    } else {
+                        dentroComillas = !dentroComillas;
+                    }
+                } else if (char === ',' && !dentroComillas) {
+                    columnas.push(campo.trim());
+                    campo = '';
+                } else {
+                    campo += char;
+                }
+            }
+            
+            columnas.push(campo.trim());
+            return columnas;
+        }
+        
+        function procesarCSV(csvText) {
+            const lineas = csvText.split('\n');
+            datosParticipaciones = {};
+            
+            // Saltar encabezado (primera línea)
+            for (let i = 1; i < lineas.length; i++) {
+                const linea = lineas[i].trim();
+                if (!linea) continue;
+                
+                const columnas = parseCSVLine(linea);
+                if (!columnas || columnas.length < 2) continue;
+                
+                let nombre = columnas[1].trim();
+                if (!nombre || nombre === '') continue;
+                
+                nombre = nombre.replace(/\s+/g, ' ');
+                
+                if (!datosParticipaciones[nombre]) {
+                    datosParticipaciones[nombre] = 0;
+                }
+                datosParticipaciones[nombre]++;
+            }
+        }
+        
+        // ============================================
+        // GENERACIÓN DEL RANKING
+        // ============================================
+        function generarRanking() {
+            const participantesOrdenados = Object.entries(datosParticipaciones)
+                .map(([nombre, participaciones]) => ({
+                    nombre,
+                    participaciones,
+                    inversion: participaciones * 4
+                }))
+                .sort((a, b) => b.inversion - a.inversion);
+            
+            const container = document.getElementById('rankingCards');
+            container.innerHTML = '';
+            
+            const medallas = ['🥇', '🥈', '🥉'];
+            const maxInversion = Math.max(...participantesOrdenados.map(p => p.inversion));
+            
+            participantesOrdenados.forEach((participante, index) => {
+                const posicion = index + 1;
+                const porcentaje = (participante.inversion / maxInversion) * 100;
+                
+                const card = document.createElement('div');
+                card.style.cssText = `
+                    background: white;
+                    border-radius: 15px;
+                    padding: 20px;
+                    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                    display: flex;
+                    align-items: center;
+                    gap: 20px;
+                    transition: transform 0.3s, box-shadow 0.3s;
+                    animation: slideIn 0.5s ease-out ${index * 0.1}s backwards;
+                    cursor: pointer;
+                `;
+                
+                card.onmouseenter = () => {
+                    card.style.transform = 'translateX(10px)';
+                    card.style.boxShadow = '0 10px 25px rgba(102, 126, 234, 0.3)';
+                };
+                
+                card.onmouseleave = () => {
+                    card.style.transform = 'translateX(0)';
+                    card.style.boxShadow = '0 5px 15px rgba(0,0,0,0.1)';
+                };
+                
+                card.innerHTML = `
+                    <div style="font-size: 2em; min-width: 60px; text-align: center; font-weight: bold;">
+                        ${posicion <= 3 ? medallas[posicion - 1] : `#${posicion}`}
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 1.3em; font-weight: bold; color: #333; margin-bottom: 8px;">
+                            ${participante.nombre}
+                        </div>
+                        <div style="background: #f0f0f0; border-radius: 10px; height: 25px; position: relative; overflow: hidden;">
+                            <div style="
+                                background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+                                height: 100%;
+                                width: ${porcentaje}%;
+                                border-radius: 10px;
+                                transition: width 1s ease-out ${index * 0.1}s;
+                            "></div>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 0.9em; color: #666;">
+                            ${participante.participaciones} participación${participante.participaciones !== 1 ? 'es' : ''}
+                        </div>
+                    </div>
+                    <div style="text-align: right; min-width: 120px;">
+                        <div style="font-size: 1.6em; font-weight: bold; color: #667eea;">
+                            ${participante.inversion} €
+                        </div>
+                        <div style="font-size: 0.85em; color: #999; margin-top: 5px;">
+                            ${porcentaje.toFixed(1)}% del máx.
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
+            
+            calcularEstadisticas(participantesOrdenados);
+        }
+        
+        // ============================================
+        // ESTADÍSTICAS
+        // ============================================
+        function calcularEstadisticas(participantesOrdenados) {
+            const inversiones = participantesOrdenados.map(p => p.inversion);
+            const totalParticipantes = participantesOrdenados.length;
+            const totalInvertido = inversiones.reduce((sum, val) => sum + val, 0);
+            const inversionMedia = totalInvertido / totalParticipantes;
+            const mayorInversion = Math.max(...inversiones);
+            
+            document.getElementById('totalParticipantes').textContent = totalParticipantes;
+            document.getElementById('totalInvertido').textContent = `${totalInvertido.toLocaleString('es-ES')} €`;
+            document.getElementById('inversionMedia').textContent = `${inversionMedia.toFixed(2)} €`;
+            document.getElementById('mayorInversion').textContent = `${mayorInversion.toLocaleString('es-ES')} €`;
+        }
+        
+        // ============================================
+        // INICIALIZACIÓN
+        // ============================================
+        window.addEventListener('load', cargarDatos);
+    </script>
+</body>
+</html>
