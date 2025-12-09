@@ -771,8 +771,8 @@
                 const tdUsuario = document.createElement('td');
                 tdUsuario.className = 'premio-cantidad';
                 tdUsuario.textContent = premioUsuario.toLocaleString('es-ES', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
                 }) + ' €';
                 
                 tr.appendChild(tdPremio);
